@@ -1,6 +1,7 @@
 /*
  * Table Print utilities
  * Copyright (C) 2012-2013 Paul Ionkin <paul.ionkin@gmail.com>
+ * Copyright (C) 2013 Vicent Selfa <vtselfa@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -11,407 +12,415 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
+
 #include "tprint.h"
 
-#include <string.h>
-#include <errno.h>
-#include <unistd.h>
+#include <stdarg.h>
 #include <stdlib.h>
-#include <glib/gprintf.h>
+#include <string.h>
 
-struct _TPrint {
+#include "linked-list.h"
+
+
+struct TPrint {
     FILE *fout;
-    GList *l_columns;
-    gint rows;
+    struct linked_list_t *l_columns;
+    int rows;
 
-    gchar *fmt_int32;
-    gchar *fmt_uint64;
-    gchar *fmt_str;
-    gchar *fmt_double;
+    char *fmt_int32;
+    char *fmt_uint64;
+    char *fmt_str;
+    char *fmt_double;
 
-    gboolean borders;
-    gint spaces_left;
-    gint spaces_between;
-    gboolean show_header;
+    int spaces_left;
+    int spaces_between;
+    int show_borders;
+    int show_header;
 };
 
-typedef struct  {
-    gchar *caption;
-    gint max_width;
-    TPrintAlign caption_align;
-    TPrintAlign data_align;
-    GList *l_data; // list of strings
-} TPrintColumn;
+struct TPrintColumn {
+    char *caption;
+    int max_width;
+    enum TPrintAlign caption_align;
+    enum TPrintAlign data_align;
+    struct linked_list_t *l_data; // list of strings
+};
 
-static void tprint_column_free (TPrintColumn *col);
+static void tprint_column_free (struct TPrintColumn *col);
 
-TPrint *tprint_create (FILE *fout, gboolean borders, gboolean show_header, gint spaces_left, gint spaces_between)
+
+char *strdup_printf(const char *fmt, ...)
 {
-    TPrint *tprint;
+    char *temp;
+    int len;
+    va_list args;
 
-    tprint = g_new0 (TPrint, 1);
-    tprint->l_columns = NULL;
+    va_start (args, fmt);
+    len = vsnprintf (NULL, 0, fmt, args);
+    va_end (args);
+
+    temp = calloc(len + 1, sizeof(char));
+
+    va_start (args, fmt);
+    vsnprintf (temp, len+1, fmt, args);
+    va_end (args);
+
+    return temp;
+}
+
+
+
+
+
+
+struct TPrint* tprint_create(FILE *fout, int show_borders, int show_header, int spaces_left, int spaces_between)
+{
+    struct TPrint *tprint;
+
+    tprint = calloc(1, sizeof(struct TPrint));
     tprint->fout = fout;
-    tprint->borders = borders;
     tprint->spaces_left = spaces_left;
     tprint->spaces_between = spaces_between;
-    tprint->rows = 0;
+    tprint->show_borders = show_borders;
     tprint->show_header = show_header;
+	tprint->l_columns = linked_list_create();
 
-    tprint->fmt_int32 = g_strdup ("%d");
-    tprint->fmt_uint64 = g_strdup ("%lu");
-    tprint->fmt_str = g_strdup ("%s");
-    tprint->fmt_double = g_strdup ("%0.3f");
+	tprint->fmt_int32 = strdup("%d");
+    tprint->fmt_uint64 = strdup("%lu");
+    tprint->fmt_str = strdup("%s");
+    tprint->fmt_double = strdup("%0.3f");
 
     return tprint;
 }
 
-void tprint_free (TPrint *tprint)
+void tprint_free(struct TPrint *tprint)
 {
-    GList *l;
+    free(tprint->fmt_int32);
+    free(tprint->fmt_uint64);
+    free(tprint->fmt_str);
+    free(tprint->fmt_double);
 
-    g_free (tprint->fmt_int32);
-    g_free (tprint->fmt_uint64);
-    g_free (tprint->fmt_str);
-    g_free (tprint->fmt_double);
+	LINKED_LIST_FOR_EACH(tprint->l_columns)
+	{
+        struct TPrintColumn *col = linked_list_get(tprint->l_columns);
+        tprint_column_free(col);
+	}
 
-    for (l = g_list_first (tprint->l_columns); l; l = g_list_next (l)) {
-        TPrintColumn *col = (TPrintColumn *) l->data;
-        tprint_column_free (col);
+    linked_list_free(tprint->l_columns);
+    free(tprint);
+}
+
+void tprint_set_double_fmt(struct TPrint *tprint, const char *fmt)
+{
+    if(tprint->fmt_double)
+        free(tprint->fmt_double);
+    tprint->fmt_double = strdup(fmt);
+}
+
+void tprint_set_int32_fmt (struct TPrint *tprint, const char *fmt)
+{
+    if(tprint->fmt_int32)
+        free(tprint->fmt_int32);
+    tprint->fmt_int32 = strdup(fmt);
+}
+
+static void column_add_str(struct TPrintColumn *column, char *str)
+{
+    if (column->max_width < strlen(str))
+        column->max_width = strlen(str);
+
+    linked_list_add(column->l_data, str);
+}
+
+void tprint_column_add(struct TPrint *tprint, const char *caption, enum TPrintAlign caption_align, enum TPrintAlign data_align)
+{
+    struct TPrintColumn *col;
+
+    col = calloc(1, sizeof(struct TPrintColumn));
+	col->l_data = linked_list_create();
+    if (tprint->show_header)
+	{
+        col->caption = strdup(caption);
+        col->max_width = strlen(caption);
     }
-    g_list_free (tprint->l_columns);
-    g_free (tprint);
-}
-
-void tprint_set_double_fmt (TPrint *tprint, const gchar *fmt)
-{
-    if (tprint->fmt_double)
-        g_free (tprint->fmt_double);
-    tprint->fmt_double = g_strdup (fmt);
-}
-
-void tprint_set_int32_fmt (TPrint *tprint, const gchar *fmt)
-{
-    if (tprint->fmt_int32)
-        g_free (tprint->fmt_int32);
-    tprint->fmt_int32 = g_strdup (fmt);
-}
-
-static void column_add_str (TPrintColumn *column, gchar *str)
-{
-    if (column->max_width < (gint)strlen (str))
-        column->max_width = (gint)strlen (str);
-
-    column->l_data = g_list_append (column->l_data, str);
-}
-
-void tprint_column_add (TPrint *tprint, const gchar *caption, TPrintAlign caption_align, TPrintAlign data_align)
-{
-    TPrintColumn *col;
-
-    col = g_new0 (TPrintColumn, 1);
-    if (tprint->show_header) {
-        col->caption = g_strdup (caption);
-        col->max_width = strlen (caption);
-    } else {
+	else
+	{
         col->caption = NULL;
         col->max_width = 0;
     }
     col->caption_align = caption_align;
     col->data_align = data_align;
-    col->l_data = NULL;
 
-    tprint->l_columns = g_list_append (tprint->l_columns, col);
+    linked_list_add(tprint->l_columns, col);
 }
 
-static void tprint_column_free (TPrintColumn *col)
+void tprint_column_free(struct TPrintColumn *col)
 {
-    GList *l;
-    
-    for (l = g_list_first (col->l_data); l; l = g_list_next (l)) {
-        gchar *str = (gchar *) l->data;
-        g_free (str);
+	LINKED_LIST_FOR_EACH(col->l_data)
+	{
+        char *str = linked_list_get(col->l_data);
+        free(str);
     }
-    g_list_free (col->l_data);
-    if (col->caption)
-        g_free (col->caption);
-    g_free (col);
+    linked_list_free(col->l_data);
+	if (col->caption)
+        free(col->caption);
+    free (col);
 }
 
 // convert data to string
-void tprint_data_add_int32 (TPrint *tprint, gint col, gint32 data)
+void tprint_data_add_int32 (struct TPrint *tprint, int col, int data)
 {
-    TPrintColumn *column;
-    gchar *str;
+    struct TPrintColumn *column;
+    char *str;
 
-    column = (TPrintColumn *) g_list_nth_data (tprint->l_columns, col);
+    linked_list_goto(tprint->l_columns, col);
+    column = linked_list_get(tprint->l_columns);
     if (!column)
         return;
-    str = g_strdup_printf (tprint->fmt_int32, data);
+    str = strdup_printf(tprint->fmt_int32, data);
+    column_add_str(column, str);
+}
+
+void tprint_data_add_uint64 (struct TPrint *tprint, int col, unsigned long long data)
+{
+    struct TPrintColumn *column;
+    char *str;
+
+    linked_list_goto(tprint->l_columns, col);
+    column = linked_list_get(tprint->l_columns);
+    if (!column)
+        return;
+    str = strdup_printf(tprint->fmt_uint64, data);
+    column_add_str(column, str);
+}
+
+void tprint_data_add_str(struct TPrint *tprint, int col, const char *data)
+{
+    struct TPrintColumn *column;
+    char *str;
+
+    linked_list_goto(tprint->l_columns, col);
+    column = linked_list_get(tprint->l_columns);
+    if (!column)
+        return;
+    str = strdup_printf(tprint->fmt_str, data);
     column_add_str (column, str);
 }
 
-void tprint_data_add_uint64 (TPrint *tprint, gint col, guint64 data)
+void tprint_data_add_double(struct TPrint *tprint, int col, double data)
 {
-    TPrintColumn *column;
-    gchar *str;
+    struct TPrintColumn *column;
+    char *str;
 
-    column = (TPrintColumn *) g_list_nth_data (tprint->l_columns, col);
+    linked_list_goto(tprint->l_columns, col);
+    column = linked_list_get(tprint->l_columns);
     if (!column)
         return;
-    str = g_strdup_printf (tprint->fmt_uint64, data);
-    column_add_str (column, str);
+    str = strdup_printf(tprint->fmt_double, data);
+    column_add_str(column, str);
 }
 
-void tprint_data_add_str (TPrint *tprint, gint col, const gchar *data)
+void tprint_print_no_borders(struct TPrint *tprint)
 {
-    TPrintColumn *column;
-    gchar *str;
+    int spaces_left;
+    int first = TRUE;
 
-    column = (TPrintColumn *) g_list_nth_data (tprint->l_columns, col);
-    if (!column)
-        return;
-    str = g_strdup_printf (tprint->fmt_str, data);
-    column_add_str (column, str);
-}
+    if (tprint->show_header)
+	{
+		LINKED_LIST_FOR_EACH(tprint->l_columns)
+		{
+            struct TPrintColumn *col = linked_list_get(tprint->l_columns);
 
-void tprint_data_add_double (TPrint *tprint, gint col, gdouble data)
-{
-    TPrintColumn *column;
-    gchar *str;
-
-    column = (TPrintColumn *) g_list_nth_data (tprint->l_columns, col);
-    if (!column)
-        return;
-    str = g_strdup_printf (tprint->fmt_double, data);
-    column_add_str (column, str);
-}
-
-static void tprint_print_no_borders (TPrint *tprint)
-{
-    GList *l;
-    gint row;
-    gboolean first = TRUE;
-    gint spaces_left;
-
-    if (tprint->show_header) {
-        for (l = g_list_first (tprint->l_columns); l; l = g_list_next (l)) {
-            TPrintColumn *col = (TPrintColumn *) l->data;
-
-            if (first) {
+            if (first)
+			{
                 spaces_left = tprint->spaces_left;
                 first = FALSE;
-            } else
-                spaces_left = tprint->spaces_between;
-            
-            if (col->caption_align == TPAlign_left) {
-                g_fprintf (tprint->fout, "%*s%-*s", 
-                    spaces_left, "",
-                    col->max_width, col->caption
-                );
-            } else if (col->caption_align == TPAlign_center) {
-                 g_fprintf (tprint->fout, "%*s%-*s", 
-                        spaces_left + (col->max_width - (gint)strlen (col->caption)) / 2, "",
-                        col->max_width - (col->max_width - (gint)strlen (col->caption)) / 2, col->caption
-                    );
-            } else {
-                g_fprintf (tprint->fout, "%*s%*s", 
-                    spaces_left, "",
-                    col->max_width, col->caption
-                );
             }
+			else
+                spaces_left = tprint->spaces_between;
 
-            if (tprint->rows < (gint)g_list_length (col->l_data))
-                tprint->rows = (gint)g_list_length (col->l_data);
+            if (col->caption_align == TPAlign_left)
+                fprintf (tprint->fout, "%*s%-*s", spaces_left, "", col->max_width, col->caption);
+            else if (col->caption_align == TPAlign_center)
+                fprintf(tprint->fout, "%*s%-*s", spaces_left + (col->max_width - (int) strlen(col->caption)) / 2, "", col->max_width - (col->max_width - (int) strlen(col->caption)) / 2, col->caption);
+            else
+                fprintf (tprint->fout, "%*s%*s", spaces_left, "", col->max_width, col->caption);
+
+            int count = linked_list_count(col->l_data);
+			if (tprint->rows < count)
+                tprint->rows = count;
 
         }
-        g_fprintf (tprint->fout, "\n");
-    } else {
-
-        for (l = g_list_first (tprint->l_columns); l; l = g_list_next (l)) {
-            TPrintColumn *col = (TPrintColumn *) l->data;
-            if (tprint->rows < (gint)g_list_length (col->l_data))
-                tprint->rows = (gint)g_list_length (col->l_data);
-        }        
+        fprintf(tprint->fout, "\n");
+    }
+	else
+	{
+		LINKED_LIST_FOR_EACH(tprint->l_columns)
+		{
+            struct TPrintColumn *col = linked_list_get(tprint->l_columns);
+            int count = linked_list_count(col->l_data);
+			if (tprint->rows < count)
+                tprint->rows = count;
+        }
     }
 
-    for (row = 0; row < tprint->rows; row++) {
+    for (int row = 0; row < tprint->rows; row++)
+	{
         first = TRUE;
-        for (l = g_list_first (tprint->l_columns); l; l = g_list_next (l)) {
-            TPrintColumn *col = (TPrintColumn *) l->data;
-            gchar *cell = (gchar *) g_list_nth_data (col->l_data, row);
-            if (first) {
+		LINKED_LIST_FOR_EACH(tprint->l_columns)
+		{
+            struct TPrintColumn *col = linked_list_get(tprint->l_columns);
+            char *cell;
+			linked_list_goto(col->l_data, row);
+            cell = linked_list_get(col->l_data);
+
+            if (first)
+			{
                 spaces_left = tprint->spaces_left;
                 first = FALSE;
-            } else 
+            }
+			else
                 spaces_left = tprint->spaces_between;
 
-            if (col->data_align == TPAlign_left) {
-                g_fprintf (tprint->fout, "%*s%-*s", 
-                    spaces_left, "",
-                    col->max_width, cell
-                );
-            } else if (col->data_align == TPAlign_center) {
-                g_fprintf (tprint->fout, "%*s%-*s", 
-                    spaces_left + (col->max_width - (gint)strlen (cell)) / 2, "",
-                    col->max_width - (col->max_width - (gint)strlen (cell)) / 2, cell
-                );
-            } else {
-                g_fprintf (tprint->fout, "%*s%*s", 
-                    spaces_left, "",
-                    col->max_width, cell
-                );
-            }
+            if (col->data_align == TPAlign_left)
+                fprintf(tprint->fout, "%*s%-*s", spaces_left, "", col->max_width, cell);
+            else if (col->data_align == TPAlign_center)
+                fprintf(tprint->fout, "%*s%-*s", spaces_left + (col->max_width - (int) strlen(cell)) / 2, "", col->max_width - (col->max_width - (int) strlen(cell)) / 2, cell);
+            else
+                fprintf(tprint->fout, "%*s%*s", spaces_left, "", col->max_width, cell);
         }
-        g_fprintf (tprint->fout, "\n");
+        fprintf(tprint->fout, "\n");
     }
 }
 
-static void tprint_print_with_borders (TPrint *tprint)
+void tprint_print_with_borders(struct TPrint *tprint)
 {
-    GList *l;
-    gint row;
-    gboolean first = TRUE;
-    gint spaces_left;
-    gint full_width = 0;
-    gchar *str;
-    gint i;
+    int first = TRUE;
+    int spaces_left;
+    int full_width = 0;
+    char *str;
+    int i;
 
-    if (tprint->borders) {
-        for (l = g_list_first (tprint->l_columns); l; l = g_list_next (l)) {
-            TPrintColumn *col = (TPrintColumn *) l->data;
+    if (tprint->show_borders)
+	{
+		LINKED_LIST_FOR_EACH(tprint->l_columns)
+		{
+            struct TPrintColumn *col = linked_list_get(tprint->l_columns);
             full_width += (col->max_width + tprint->spaces_between);
         }
     }
 
-    full_width += g_list_length (tprint->l_columns);
+    full_width += linked_list_count(tprint->l_columns);
     full_width -= 1;
 
-
-    if (tprint->show_header) {
-        str = g_new0 (gchar, full_width + 1);
+    if (tprint->show_header)
+	{
+        str = calloc(full_width + 1, sizeof(char));
         for (i = 0; i < full_width; i++)
             str[i] = '=';
         str[i] = '\0';
 
-        g_fprintf (tprint->fout, "%*s%s\n", 
-            tprint->spaces_left + 1, "",
-            str
-        );
-        g_free (str);
+        fprintf(tprint->fout, "%*s%s\n", tprint->spaces_left + 1, "", str);
+        free(str);
 
-        g_fprintf (tprint->fout, "%*s", tprint->spaces_left, "");
-        for (l = g_list_first (tprint->l_columns); l; l = g_list_next (l)) {
-            TPrintColumn *col = (TPrintColumn *) l->data;
+        fprintf(tprint->fout, "%*s", tprint->spaces_left, "");
+		LINKED_LIST_FOR_EACH(tprint->l_columns)
+		{
+            struct TPrintColumn *col = linked_list_get(tprint->l_columns);
+			int count;
 
-            if (first) {
+            if (first)
                 first = FALSE;
-            } else {
-            }
             spaces_left = tprint->spaces_between;
-            
-            if (col->caption_align == TPAlign_left) {
-                g_fprintf (tprint->fout, "|%*s%-*s%*s", 
-                    spaces_left / 2, "",
-                    col->max_width, col->caption,
-                    spaces_left / 2, ""
-                );
-            } else if (col->caption_align == TPAlign_center) {
-                g_fprintf (tprint->fout, "|%*s%s%*s", 
-                    spaces_left / 2 +  (col->max_width - (gint)strlen (col->caption)) / 2, "",
-                    col->caption,
-                    col->max_width - (gint)strlen (col->caption) - (col->max_width - (gint)strlen (col->caption)) / 2 + spaces_left / 2, ""
-                );
-            } else {
-                g_fprintf (tprint->fout, "|%*s%*s%*s", 
-                    spaces_left / 2, "",
-                    col->max_width, col->caption,
-                    spaces_left / 2, ""
-                );
-            }
 
-            if (tprint->rows < (gint)g_list_length (col->l_data))
-                tprint->rows = (gint)g_list_length (col->l_data);
+            if (col->caption_align == TPAlign_left)
+                fprintf(tprint->fout, "|%*s%-*s%*s", spaces_left / 2, "", col->max_width, col->caption, spaces_left / 2, "");
+            else if (col->caption_align == TPAlign_center)
+				fprintf(tprint->fout, "|%*s%s%*s", spaces_left / 2 +
+					(col->max_width - (int) strlen(col->caption)) / 2, "",
+					col->caption, col->max_width - (int) strlen (col->caption) -
+					(col->max_width - (int) strlen(col->caption)) / 2 + spaces_left / 2, "");
+            else
+                fprintf (tprint->fout, "|%*s%*s%*s", spaces_left / 2, "", col->max_width, col->caption, spaces_left / 2, "");
 
+			count = linked_list_count(col->l_data);
+            if (tprint->rows < count)
+                tprint->rows = count;
         }
-        g_fprintf (tprint->fout, "|\n");
-    } else {
-
-        for (l = g_list_first (tprint->l_columns); l; l = g_list_next (l)) {
-            TPrintColumn *col = (TPrintColumn *) l->data;
-            if (tprint->rows < (gint)g_list_length (col->l_data))
-                tprint->rows = (gint)g_list_length (col->l_data);
-        }        
+        fprintf(tprint->fout, "|\n");
+    }
+	else
+	{
+		LINKED_LIST_FOR_EACH(tprint->l_columns)
+		{
+            struct TPrintColumn *col = linked_list_get(tprint->l_columns);
+			int count = linked_list_count(col->l_data);
+            if (tprint->rows < count)
+                tprint->rows = count;
+        }
     }
 
-    str = g_new0 (gchar, full_width + 1);
+    str = calloc(full_width + 1, sizeof(char));
     for (i = 0; i < full_width; i++)
         str[i] = '=';
     str[i] = '\0';
 
-    g_fprintf (tprint->fout, "%*s%s\n", 
-        tprint->spaces_left + 1, "",
-        str
-    );
-    g_free (str);
+    fprintf(tprint->fout, "%*s%s\n", tprint->spaces_left + 1, "", str);
+    free(str);
 
-    for (row = 0; row < tprint->rows; row++) {
+    for (int row = 0; row < tprint->rows; row++) {
         first = TRUE;
-        g_fprintf (tprint->fout, "%*s", tprint->spaces_left, "");
-        for (l = g_list_first (tprint->l_columns); l; l = g_list_next (l)) {
-            TPrintColumn *col = (TPrintColumn *) l->data;
-            gchar *cell = (gchar *) g_list_nth_data (col->l_data, row);
-            if (first) {
-                //spaces_left = tprint->spaces_left;
+        fprintf(tprint->fout, "%*s", tprint->spaces_left, "");
+		LINKED_LIST_FOR_EACH(tprint->l_columns)
+		{
+            struct TPrintColumn *col = linked_list_get(tprint->l_columns);
+            char *cell;
+			linked_list_goto(col->l_data, row);
+            cell = linked_list_get(col->l_data);
+
+            if (first)
                 first = FALSE;
-            } else {
-            }
-            
+
             spaces_left = tprint->spaces_between;
 
-            if (col->data_align == TPAlign_left) {
-                g_fprintf (tprint->fout, "|%*s%-*s%*s", 
+            if (col->data_align == TPAlign_left)
+                fprintf(tprint->fout, "|%*s%-*s%*s",
                     spaces_left / 2, "",
                     col->max_width, cell,
                     spaces_left / 2, ""
                 );
-            } else if (col->data_align == TPAlign_center) {
-                g_fprintf (tprint->fout, "|%*s%s%*s", 
-                    spaces_left / 2 +  (col->max_width - (gint)strlen (cell)) / 2, "",
-                    cell,
-                    col->max_width - (gint)strlen (cell) - (col->max_width - (gint)strlen (cell)) / 2 + spaces_left / 2, ""
+			else if (col->data_align == TPAlign_center)
+                fprintf(tprint->fout, "|%*s%s%*s",
+                    spaces_left / 2 +  (col->max_width - (int) strlen (cell)) / 2, "", cell,
+                    col->max_width - (int) strlen(cell) - (col->max_width - (int) strlen(cell)) / 2 + spaces_left / 2, ""
                 );
-            } else {
-                g_fprintf (tprint->fout, "|%*s%*s%*s", 
+			else
+                fprintf(tprint->fout, "|%*s%*s%*s",
                     spaces_left / 2, "",
                     col->max_width, cell,
                     spaces_left / 2, ""
                 );
-            }
         }
-        g_fprintf (tprint->fout, "|\n");
+        fprintf(tprint->fout, "|\n");
     }
 
-    str = g_new0 (gchar, full_width + 1);
+    str = calloc(full_width + 1, sizeof(char));
     for (i = 0; i < full_width; i++)
         str[i] = '=';
     str[i] = '\0';
 
-    g_fprintf (tprint->fout, "%*s%s\n", 
-        tprint->spaces_left + 1, "",
-        str
-    );
-    g_free (str);
+    fprintf(tprint->fout, "%*s%s\n", tprint->spaces_left + 1, "", str);
+    free(str);
 }
 
-void tprint_print (TPrint *tprint)
+void tprint_print(struct TPrint *tprint)
 {
-    if (tprint->borders)
-        tprint_print_with_borders (tprint);
+    if (tprint->show_borders)
+        tprint_print_with_borders(tprint);
     else
-        tprint_print_no_borders (tprint);
+        tprint_print_no_borders(tprint);
 }

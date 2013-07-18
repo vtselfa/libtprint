@@ -11,33 +11,18 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 #include "tprint.h"
 
-gchar *get_rnd_str ()
-{
-    gchar *s;
-    gint j;
-    int i = g_random_int_range (1, 10);
-    s = g_new0 (gchar, i + 1);
-    for (j = 0; j < i; j++) {
-        s[j] = g_random_int_range ('a', 'z');
-    }
-    s[j] = '\0';
-
-    return s;
-}
-
 int main ()
 {
-    TPrint *tp;
-    gdouble d1 = 40.488, d2 = 112.908 , d3 = 3.23;
-    gint i1 = 532, i2 = 3;
-    gint i;
-    gchar *s;
+    struct TPrint *tp;
+    double d1 = 40.488, d2 = 112.908 , d3 = 3.23;
+    int i1 = 532, i2 = 3;
+    int i;
 
     tp = tprint_create (stderr, TRUE, TRUE, 0, 4);
 
@@ -52,9 +37,7 @@ int main ()
     tprint_column_add (tp, "test 4", TPAlign_center, TPAlign_center);
     */
     for (i = 0; i < 20; i++) {
-        s = get_rnd_str ();
-        tprint_data_add_str (tp, 0, s);
-        g_free (s);
+        tprint_data_add_str (tp, 0, "test");
         d1 *= 2;
         tprint_data_add_double (tp, 1, d1);
         d2 *= 3;
@@ -66,18 +49,14 @@ int main ()
         i2 *= 3;
         tprint_data_add_int32 (tp, 4, i2);
 
-        s = get_rnd_str ();
-        tprint_data_add_str (tp, 5, s);
-        g_free (s);
+        tprint_data_add_str (tp, 5, "test2");
 
         d3 *= 3;
         tprint_data_add_double (tp, 6, d3);
 
-        s = get_rnd_str ();
-        tprint_data_add_str (tp, 7, s);
-        g_free (s);
+        tprint_data_add_str (tp, 7, "test3");
     }
-    
+
     tprint_print (tp);
 
     tprint_free (tp);
