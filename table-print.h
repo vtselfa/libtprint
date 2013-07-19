@@ -70,6 +70,9 @@ void table_print_data_add_double(struct table_print_t *tp, int col, double data)
 void table_print_print(struct table_print_t *tp);
 
 
+void table_print_add_row(struct table_print_t *tp, const char* fmt, ...)  __attribute__ ((format (printf, 2, 3)));
+
+
 
 /* Private functions */
 

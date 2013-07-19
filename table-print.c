@@ -28,18 +28,14 @@
 struct table_print_t
 {
 	FILE *fout;
-	struct linked_list_t *columns;
+	struct list_t *columns;
 	int rows;
-
-	char *fmt_int32;
-	char *fmt_uint64;
-	char *fmt_str;
-	char *fmt_double;
 
 	int spaces_left;
 	int spaces_between;
 	int show_borders;
 	int show_header;
+	int min_column_width;
 };
 
 
@@ -49,7 +45,7 @@ struct table_print_column_t
 	int max_width;
 	enum table_print_align_t caption_align;
 	enum table_print_align_t data_align;
-	struct linked_list_t *data; // list of strings
+	struct list_t *data; // list of strings
 };
 
 
@@ -73,12 +69,42 @@ char* strdup_printf(const char *fmt, ...)
 }
 
 
+struct list_t *str_token_list_create(const char *str, char *delim)
+{
+	struct list_t *token_list;
+	char *token;
+	char *tmp;
+
+	/* Create list */
+	token_list = list_create();
+
+	/* Split string into tokens */
+	tmp = strdup(str);
+	token = strtok(tmp, delim);
+	while (token)
+	{
+		/* Insert in token list */
+		token = strdup(token);
+		list_add(token_list, token);
+
+		/* Next token */
+		token = strtok(NULL, delim);
+	}
+
+	/* Free copy of 'str' */
+	free(tmp);
+
+	/* Return token list */
+	return token_list;
+}
+
+
 void table_print_column_add(struct table_print_t *tp, const char *caption, enum table_print_align_t caption_align, enum table_print_align_t data_align)
 {
 	struct table_print_column_t *col;
 
 	col = calloc(1, sizeof(struct table_print_column_t));
-	col->data = linked_list_create();
+	col->data = list_create();
 	if (tp->show_header)
 	{
 		col->caption = strdup(caption);
@@ -92,25 +118,26 @@ void table_print_column_add(struct table_print_t *tp, const char *caption, enum 
 	col->caption_align = caption_align;
 	col->data_align = data_align;
 
-	linked_list_add(tp->columns, col);
+	list_add(tp->columns, col);
 }
 
 
 void table_print_column_free(struct table_print_column_t *col)
 {
-	LINKED_LIST_FOR_EACH(col->data)
+	int i;
+	LIST_FOR_EACH(col->data, i)
 	{
-		char *str = linked_list_get(col->data);
+		char *str = list_get(col->data, i);
 		free(str);
 	}
-	linked_list_free(col->data);
+	list_free(col->data);
 	if (col->caption)
 		free(col->caption);
 	free(col);
 }
 
 
-struct table_print_t* table_print_create(FILE *fout, int show_borders, int show_header, int spaces_left, int spaces_between)
+struct table_print_t* table_print_create(FILE *fout, int show_borders, int show_header, int spaces_left, int spaces_between, int min_column_width)
 {
 	struct table_print_t *tp;
 
@@ -120,12 +147,8 @@ struct table_print_t* table_print_create(FILE *fout, int show_borders, int show_
 	tp->spaces_between = spaces_between;
 	tp->show_borders = show_borders;
 	tp->show_header = show_header;
-	tp->columns = linked_list_create();
-
-	tp->fmt_int32 = strdup("%d");
-	tp->fmt_uint64 = strdup("%llu");
-	tp->fmt_str = strdup("%s");
-	tp->fmt_double = strdup("%0.3f");
+	tp->min_column_width = min_column_width;
+	tp->columns = list_create();
 
 	return tp;
 }
@@ -133,100 +156,62 @@ struct table_print_t* table_print_create(FILE *fout, int show_borders, int show_
 
 void table_print_free(struct table_print_t *tp)
 {
-	free(tp->fmt_int32);
-	free(tp->fmt_uint64);
-	free(tp->fmt_str);
-	free(tp->fmt_double);
-
-	LINKED_LIST_FOR_EACH(tp->columns)
+	int column;
+	LIST_FOR_EACH(tp->columns, column)
 	{
-		struct table_print_column_t *col = linked_list_get(tp->columns);
-		table_print_column_free(col);
+		struct table_print_column_t *c = list_get(tp->columns, column);
+		table_print_column_free(c);
 	}
 
-	linked_list_free(tp->columns);
+	list_free(tp->columns);
 	free(tp);
 }
 
 
-void table_print_set_double_fmt(struct table_print_t *tp, const char *fmt)
+void table_print_add_row(struct table_print_t *tp, const char* fmt, ...)
 {
-	if(tp->fmt_double)
-		free(tp->fmt_double);
-	tp->fmt_double = strdup(fmt);
+	int column;
+	int num_args;
+	char *tmp;
+	va_list args;
+	struct list_t *tokens;
+
+	va_start(args, fmt);
+	temp = strdup_printf()
+	va_end(args);
+
+	tokens = str_token_list_create(tmp, "\n");
+
+	if (list_count(tokens) > list_count(tp->columns))
+		fatal("The number of items to add to the table is greater than the number of columns");
+
+	LIST_FOR_EACH(tokens, column)
+	{
+		char *data = list_get(tp->columns, column);
+		if (data)
+			column_add_str(column, data);
+	}
+
+	list_free(tokens);
+	free(tmp);
 }
 
 
-void table_print_set_int32_fmt (struct table_print_t *tp, const char *fmt)
+void table_print_add_to_column(struct table_print_t *tp, int column, const char* fmt, ...)
 {
-	if(tp->fmt_int32)
-		free(tp->fmt_int32);
-	tp->fmt_int32 = strdup(fmt);
-}
+	int len;
+	int num_args;
+	char *tmp;
+	va_list args;
+	struct list_t *tokens;
 
+	va_start(args, fmt);
+	temp = strdup_printf()
+	va_end(args);
 
-static void column_add_str(struct table_print_column_t *column, char *str)
-{
-	if (column->max_width < strlen(str))
-		column->max_width = strlen(str);
-
-	linked_list_add(column->data, str);
-}
-
-
-void table_print_data_add_int32(struct table_print_t *tp, int col, int data)
-{
-	struct table_print_column_t *column;
-	char *str;
-
-	linked_list_goto(tp->columns, col);
-	column = linked_list_get(tp->columns);
-	if (!column)
-		return;
-	str = strdup_printf(tp->fmt_int32, data);
-	column_add_str(column, str);
-}
-
-
-void table_print_data_add_uint64(struct table_print_t *tp, int col, unsigned long long data)
-{
-	struct table_print_column_t *column;
-	char *str;
-
-	linked_list_goto(tp->columns, col);
-	column = linked_list_get(tp->columns);
-	if (!column)
-		return;
-	str = strdup_printf(tp->fmt_uint64, data);
-	column_add_str(column, str);
-}
-
-
-void table_print_data_add_str(struct table_print_t *tp, int col, const char *data)
-{
-	struct table_print_column_t *column;
-	char *str;
-
-	linked_list_goto(tp->columns, col);
-	column = linked_list_get(tp->columns);
-	if (!column)
-		return;
-	str = strdup_printf(tp->fmt_str, data);
-	column_add_str(column, str);
-}
-
-
-void table_print_data_add_double(struct table_print_t *tp, int col, double data)
-{
-	struct table_print_column_t *column;
-	char *str;
-
-	linked_list_goto(tp->columns, col);
-	column = linked_list_get(tp->columns);
-	if (!column)
-		return;
-	str = strdup_printf(tp->fmt_double, data);
-	column_add_str(column, str);
+	if (tmp)
+		column_add_str(column, tmp);
+	free(tmp);
 }
 
 
@@ -234,12 +219,13 @@ void table_print_print_no_borders(struct table_print_t *tp)
 {
 	int spaces_left;
 	int first = TRUE;
+	int column;
 
 	if (tp->show_header)
 	{
-		LINKED_LIST_FOR_EACH(tp->columns)
+		LIST_FOR_EACH(tp->columns, column)
 		{
-			struct table_print_column_t *col = linked_list_get(tp->columns);
+			struct table_print_column_t *col = list_get(tp->columns, column);
 
 			if (first)
 			{
@@ -256,7 +242,7 @@ void table_print_print_no_borders(struct table_print_t *tp)
 			else
 				fprintf (tp->fout, "%*s%*s", spaces_left, "", col->max_width, col->caption);
 
-			int count = linked_list_count(col->data);
+			int count = list_count(col->data);
 			if (tp->rows < count)
 				tp->rows = count;
 
@@ -265,10 +251,10 @@ void table_print_print_no_borders(struct table_print_t *tp)
 	}
 	else
 	{
-		LINKED_LIST_FOR_EACH(tp->columns)
+		LIST_FOR_EACH(tp->columns, column)
 		{
-			struct table_print_column_t *col = linked_list_get(tp->columns);
-			int count = linked_list_count(col->data);
+			struct table_print_column_t *col = list_get(tp->columns, column);
+			int count = list_count(col->data);
 			if (tp->rows < count)
 				tp->rows = count;
 		}
@@ -277,12 +263,11 @@ void table_print_print_no_borders(struct table_print_t *tp)
 	for (int row = 0; row < tp->rows; row++)
 	{
 		first = TRUE;
-		LINKED_LIST_FOR_EACH(tp->columns)
+		LIST_FOR_EACH(tp->columns, column)
 		{
-			struct table_print_column_t *col = linked_list_get(tp->columns);
+			struct table_print_column_t *col = list_get(tp->columns, column);
 			char *cell;
-			linked_list_goto(col->data, row);
-			cell = linked_list_get(col->data);
+			cell = list_get(col->data, column);
 
 			if (first)
 			{
@@ -314,14 +299,14 @@ void table_print_print_with_borders(struct table_print_t *tp)
 
 	if (tp->show_borders)
 	{
-		LINKED_LIST_FOR_EACH(tp->columns)
+		LIST_FOR_EACH(tp->columns, column)
 		{
-			struct table_print_column_t *col = linked_list_get(tp->columns);
+			struct table_print_column_t *col = list_get(tp->columns, column);
 			full_width += (col->max_width + tp->spaces_between);
 		}
 	}
 
-	full_width += linked_list_count(tp->columns);
+	full_width += list_count(tp->columns);
 	full_width -= 1;
 
 	if (tp->show_header)
@@ -335,9 +320,9 @@ void table_print_print_with_borders(struct table_print_t *tp)
 		free(str);
 
 		fprintf(tp->fout, "%*s", tp->spaces_left, "");
-		LINKED_LIST_FOR_EACH(tp->columns)
+		LIST_FOR_EACH(tp->columns)
 		{
-			struct table_print_column_t *col = linked_list_get(tp->columns);
+			struct table_print_column_t *col = list_get(tp->columns);
 			int count;
 
 			if (first)
@@ -354,7 +339,7 @@ void table_print_print_with_borders(struct table_print_t *tp)
 			else
 				fprintf (tp->fout, "|%*s%*s%*s", spaces_left / 2, "", col->max_width, col->caption, spaces_left / 2, "");
 
-			count = linked_list_count(col->data);
+			count = list_count(col->data);
 			if (tp->rows < count)
 				tp->rows = count;
 		}
@@ -362,10 +347,10 @@ void table_print_print_with_borders(struct table_print_t *tp)
 	}
 	else
 	{
-		LINKED_LIST_FOR_EACH(tp->columns)
+		LIST_FOR_EACH(tp->columns)
 		{
-			struct table_print_column_t *col = linked_list_get(tp->columns);
-			int count = linked_list_count(col->data);
+			struct table_print_column_t *col = list_get(tp->columns);
+			int count = list_count(col->data);
 			if (tp->rows < count)
 				tp->rows = count;
 		}
@@ -382,12 +367,12 @@ void table_print_print_with_borders(struct table_print_t *tp)
 	for (int row = 0; row < tp->rows; row++) {
 		first = TRUE;
 		fprintf(tp->fout, "%*s", tp->spaces_left, "");
-		LINKED_LIST_FOR_EACH(tp->columns)
+		LIST_FOR_EACH(tp->columns)
 		{
-			struct table_print_column_t *col = linked_list_get(tp->columns);
+			struct table_print_column_t *col = list_get(tp->columns);
 			char *cell;
-			linked_list_goto(col->data, row);
-			cell = linked_list_get(col->data);
+			list_goto(col->data, row);
+			cell = list_get(col->data);
 
 			if (first)
 				first = FALSE;
