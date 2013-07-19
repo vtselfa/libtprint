@@ -22,6 +22,7 @@
 
 #include <stdio.h>
 
+
 #ifndef TRUE
 #define TRUE 1
 #endif
@@ -29,41 +30,51 @@
 #define FALSE 0
 #endif
 
-enum TPrintAlign {
-    TPAlign_left = 0,
-    TPAlign_center = 1,
-    TPAlign_right = 2,
+
+enum table_print_align_t
+{
+    table_print_align_left = 0,
+    table_print_align_center,
+    table_print_align_right,
 };
 
-// create TPrint object
+// create table_print_t object
 // fout: FILE to write table to. Must be opened with write permissions. Can specify stdout / stderr
 // borders: set to TRUE to draw inner and outer borders
 // show_header: set to TRUE to display table header row
 // spaces_left: spaces on the left side of the table
 // spaces_between: spaces between columns
-struct TPrint *tprint_create(FILE *fout, int show_borders, int show_header, int spaces_left, int spaces_between);
+struct table_print_t* table_print_create(FILE *fout, int show_borders, int show_header, int spaces_left, int spaces_between);
 
-// destroy TPrint object
-void tprint_free(struct TPrint *tprint);
+// destroy table_print_t object
+void table_print_free(struct table_print_t *tp);
 
 // Append column to the table
 // caption: label of the column, can be NULL
 // caption_align: how to align column caption
 // data_align: how to align data in the column
-void tprint_column_add(struct TPrint *tprint, const char *caption, enum TPrintAlign caption_align, enum TPrintAlign data_align);
+void table_print_column_add(struct table_print_t *tp, const char *caption, enum table_print_align_t caption_align, enum table_print_align_t data_align);
 
 // set table format for double numbers
-void tprint_set_double_fmt(struct TPrint *tprint, const char *fmt);
+void table_print_set_double_fmt(struct table_print_t *tp, const char *fmt);
 
 // set table format for int32 numbers
-void tprint_set_int32_fmt(struct TPrint *tprint, const char *fmt);
+void table_print_set_int32_fmt(struct table_print_t *tp, const char *fmt);
 
-void tprint_data_add_int32(struct TPrint *tprint, int col, int data);
-void tprint_data_add_uint64(struct TPrint *tprint, int col, unsigned long long data);
-void tprint_data_add_str(struct TPrint *tprint, int col, const char *data);
-void tprint_data_add_double(struct TPrint *tprint, int col, double data);
+void table_print_data_add_int32(struct table_print_t *tp, int col, int data);
+void table_print_data_add_uint64(struct table_print_t *tp, int col, unsigned long long data);
+void table_print_data_add_str(struct table_print_t *tp, int col, const char *data);
+void table_print_data_add_double(struct table_print_t *tp, int col, double data);
 
 // output table to the specified FILE
-void tprint_print (struct TPrint *tprint);
+void table_print_print(struct table_print_t *tp);
+
+
+
+/* Private functions */
+
+char* strdup_printf(const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
+struct table_print_column_t;
+void table_print_column_free(struct table_print_column_t *col);
 
 #endif

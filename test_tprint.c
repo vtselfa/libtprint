@@ -15,51 +15,54 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#include "tprint.h"
 
-int main ()
+#include "table-print.h"
+
+
+int main()
 {
-    struct TPrint *tp;
+    struct table_print_t *tp;
     double d1 = 40.488, d2 = 112.908 , d3 = 3.23;
     int i1 = 532, i2 = 3;
     int i;
 
-    tp = tprint_create (stderr, TRUE, TRUE, 0, 4);
+    tp = table_print_create (stderr, TRUE, TRUE, 0, 4);
 
-    tprint_column_add (tp, "", TPAlign_center, TPAlign_right);
-    tprint_column_add (tp, "Align left", TPAlign_center, TPAlign_left);
-    tprint_column_add (tp, "Align right", TPAlign_center, TPAlign_right);
-    tprint_column_add (tp, "1", TPAlign_center, TPAlign_left);
-    tprint_column_add (tp, "Align center", TPAlign_center, TPAlign_center);
+    table_print_column_add (tp, "", table_print_align_center, table_print_align_right);
+    table_print_column_add (tp, "Align left", table_print_align_center, table_print_align_left);
+    table_print_column_add (tp, "Align right", table_print_align_center, table_print_align_right);
+    table_print_column_add (tp, "1", table_print_align_center, table_print_align_left);
+    table_print_column_add (tp, "Align center", table_print_align_center, table_print_align_center);
+
     /*
-    tprint_column_add (tp, "test 2", TPAlign_center, TPAlign_left);
-    tprint_column_add (tp, "", TPAlign_center, TPAlign_right);
-    tprint_column_add (tp, "test 4", TPAlign_center, TPAlign_center);
+    table_print_column_add (tp, "test 2", table_print_align_center, table_print_align_left);
+    table_print_column_add (tp, "", table_print_align_center, table_print_align_right);
+    table_print_column_add (tp, "test 4", table_print_align_center, table_print_align_center);
     */
-    for (i = 0; i < 20; i++) {
-        tprint_data_add_str (tp, 0, "test");
+    for (i = 0; i < 20; i++)
+	{
+        table_print_data_add_str(tp, 0, "test");
         d1 *= 2;
-        tprint_data_add_double (tp, 1, d1);
+        table_print_data_add_double(tp, 1, d1);
         d2 *= 3;
-        tprint_data_add_double (tp, 2, d2);
+        table_print_data_add_double(tp, 2, d2);
 
         i1 *= 2;
-        tprint_data_add_int32 (tp, 3, i1);
+        table_print_data_add_int32(tp, 3, i1);
 
         i2 *= 3;
-        tprint_data_add_int32 (tp, 4, i2);
+        table_print_data_add_int32(tp, 4, i2);
 
-        tprint_data_add_str (tp, 5, "test2");
+        table_print_data_add_str(tp, 5, "test2");
 
         d3 *= 3;
-        tprint_data_add_double (tp, 6, d3);
+        table_print_data_add_double(tp, 6, d3);
 
-        tprint_data_add_str (tp, 7, "test3");
+        table_print_data_add_str(tp, 7, "test3");
     }
 
-    tprint_print (tp);
-
-    tprint_free (tp);
+    table_print_print(tp);
+    table_print_free(tp);
 
     return 0;
 }
